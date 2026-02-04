@@ -213,3 +213,6 @@ data/*.json
 
 # Environment variables
 .envåå
+
+# Next Steps file
+next_steps.md
