@@ -6,7 +6,7 @@ serialization, and schema generation.
 """
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -131,16 +131,17 @@ class TestTaxSectionDefaultValues:
         assert isinstance(section.metadata, dict)
 
     def test_created_at_auto_generated(self):
-        before = datetime.utcnow()
+        before = datetime.now(timezone.utc)
         section = TaxSection(
             section_number="26 U.S.C. § 162",
             title="Test",
             content="Content",
             hierarchy=["Title 26"],
         )
-        after = datetime.utcnow()
+        after = datetime.now(timezone.utc)
 
         assert isinstance(section.created_at, datetime)
+        assert section.created_at.tzinfo is not None
         assert before <= section.created_at <= after
 
     def test_effective_date_defaults_to_none(self):

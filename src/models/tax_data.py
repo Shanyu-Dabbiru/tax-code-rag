@@ -7,10 +7,10 @@ for validating, storing, and retrieving tax code information.
 
 from typing import Dict, List, Optional
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SectionType(str, Enum):
@@ -148,16 +148,15 @@ class TaxSection(BaseModel):
     )
 
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        description="Timestamp when this record was created/ingested."
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Timestamp when this record was created/ingested (UTC)."
     )
 
-    class Config:
-        """Pydantic v2 configuration."""
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "id": "550e8400-e29b-41d4-a716-446655440000",
-                "parent_id": None,  # Root section has no parent
+                "parent_id": None,
                 "section_number": "26 U.S.C. § 162",
                 "title": "Trade or business expenses",
                 "content": "(a) In general. There shall be allowed as a deduction "
@@ -172,6 +171,7 @@ class TaxSection(BaseModel):
                     "version": "2024-01",
                     "last_amended": "1986-10-22"
                 },
-                "created_at": "2024-01-15T10:30:00"
+                "created_at": "2024-01-15T10:30:00Z"
             }
         }
+    )
