@@ -215,4 +215,4 @@ data/*.json
 .envåå
 
 # Next Steps file
-next_steps.md
+changelog.md
