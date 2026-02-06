@@ -14,11 +14,16 @@ import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional
 
 from lxml import html
+from opentelemetry import trace
+from pydantic import ValidationError
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, PointStruct, VectorParams
 
 from src.models.tax_data import SectionType, TaxSection
+from src.ingestion.otel_config import setup_tracer
 
 
 LOGGER = logging.getLogger(__name__)
@@ -31,6 +36,10 @@ DOCUMENT_ID_RE = re.compile(
 ITEM_PATH_RE = re.compile(r"<!--\s*itempath:([^\r\n]*?)\s*-->")
 FIELD_START_RE = re.compile(r"<!--\s*field-start:([a-z0-9\-]+)\s*-->")
 
+COLLECTION_NAME = "tax_code_raw"
+VECTOR_SIZE = 1
+BATCH_SIZE = 100
+
 
 @dataclass(frozen=True)
 class ParseResult:
@@ -38,6 +47,8 @@ class ParseResult:
 
 	section: Optional[TaxSection]
 	skipped: bool
+	file_path: str
+	error_message: Optional[str] = None
 
 
 class TaxParser:
@@ -61,52 +72,158 @@ class TaxParser:
 			return []
 
 		sections: List[TaxSection] = []
-		with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-			futures = {executor.submit(self.parse_file, path): path for path in html_files}
-			for future in as_completed(futures):
-				result = future.result()
-				if result.section is not None:
-					sections.append(result.section)
-
+		tracer = trace.get_tracer(__name__)
+		with tracer.start_as_current_span("parse_directory") as span:
+			span.set_attribute("file_count", len(html_files))
+			with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+				futures = {
+					executor.submit(self.parse_file, path): path for path in html_files
+				}
+				for future in as_completed(futures):
+					result = future.result()
+					if result.section is not None:
+						sections.append(result.section)
+					elif result.error_message:
+						span.add_event(
+							"parse_error",
+							{
+								"file_path": result.file_path,
+								"error": result.error_message,
+							},
+						)
+			span.set_attribute("parsed_count", len(sections))
 		return sections
+
+	def upload_to_qdrant(self, sections: List[TaxSection]) -> None:
+		"""Upload validated TaxSection objects to Qdrant in batches."""
+		client = self._get_qdrant_client()
+		self._ensure_collection(client)
+		tracer = trace.get_tracer(__name__)
+		with tracer.start_as_current_span("qdrant_upload") as span:
+			span.set_attribute("collection", COLLECTION_NAME)
+			span.set_attribute("batch_size", BATCH_SIZE)
+			span.set_attribute("total_sections", len(sections))
+			for start in range(0, len(sections), BATCH_SIZE):
+				batch = sections[start : start + BATCH_SIZE]
+				points = [
+					PointStruct(
+						id=str(section.id),
+						vector=[0.0],
+						payload=self._build_payload(section),
+					)
+					for section in batch
+				]
+				try:
+					client.upsert(collection_name=COLLECTION_NAME, points=points)
+					span.add_event(
+						"batch_uploaded",
+						{
+							"batch_start": start,
+							"batch_size": len(batch),
+						},
+					)
+				except Exception as exc:
+					span.add_event(
+						"upload_error",
+						{
+							"batch_start": start,
+							"batch_size": len(batch),
+							"error": str(exc),
+						},
+					)
+
+	@staticmethod
+	def _get_qdrant_client() -> QdrantClient:
+		return QdrantClient(host="localhost", port=6333)
+
+	@staticmethod
+	def _ensure_collection(client: QdrantClient) -> None:
+		try:
+			client.get_collection(COLLECTION_NAME)
+			return
+		except Exception:
+			client.create_collection(
+				collection_name=COLLECTION_NAME,
+				vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+			)
+
+	@staticmethod
+	def _build_payload(section: TaxSection) -> Dict[str, object]:
+		return {
+			"section_number": section.section_number,
+			"title": section.title,
+			"content": section.content,
+			"hierarchy": section.hierarchy,
+			"section_type": section.section_type.value,
+			"subsections": section.subsections,
+			"effective_date": section.effective_date.isoformat()
+			if section.effective_date
+			else None,
+			"source_url": section.source_url,
+			"metadata": section.metadata,
+			"created_at": section.created_at.isoformat(),
+		}
 
 	@staticmethod
 	def parse_file(file_path: str) -> ParseResult:
 		"""Parse a single HTML file into a TaxSection or return skipped result."""
-		with open(file_path, "r", encoding="utf-8", errors="ignore") as handle:
-			raw_html = handle.read()
+		try:
+			with open(file_path, "r", encoding="utf-8", errors="ignore") as handle:
+				raw_html = handle.read()
 
-		metadata = TaxParser._extract_document_metadata(raw_html)
-		itempath = TaxParser._extract_itempath(raw_html)
-		hierarchy = TaxParser._parse_hierarchy(itempath)
-		field_blocks = TaxParser._extract_field_blocks(raw_html)
+			metadata = TaxParser._extract_document_metadata(raw_html)
+			itempath = TaxParser._extract_itempath(raw_html)
+			hierarchy = TaxParser._parse_hierarchy(itempath)
+			field_blocks = TaxParser._extract_field_blocks(raw_html)
 
-		statute_html = field_blocks.get("statute")
-		if not statute_html or not statute_html.strip():
-			TaxParser._trace_missing_statute(file_path, metadata, itempath)
-			return ParseResult(section=None, skipped=True)
+			statute_html = field_blocks.get("statute")
+			if not statute_html or not statute_html.strip():
+				return ParseResult(
+					section=None,
+					skipped=True,
+					file_path=file_path,
+					error_message="missing_statute",
+				)
 
-		content = TaxParser._html_to_text(statute_html)
-		effective_date = TaxParser._parse_effective_date(
-			field_blocks.get("effectivedate-note")
-		)
-		section_number = TaxParser._derive_section_number(itempath, metadata)
-		title = TaxParser._derive_title(field_blocks, raw_html, hierarchy)
-		section_type = TaxParser._derive_section_type(hierarchy)
-		subsections = TaxParser._extract_subsections(content)
+			content = TaxParser._html_to_text(statute_html)
+			effective_date = TaxParser._parse_effective_date(
+				field_blocks.get("effectivedate-note")
+			)
+			section_number = TaxParser._derive_section_number(itempath, metadata)
+			title = TaxParser._derive_title(field_blocks, raw_html, hierarchy)
+			section_type = TaxParser._derive_section_type(hierarchy)
+			subsections = TaxParser._extract_subsections(content)
 
-		section = TaxSection(
-			section_number=section_number,
-			title=title,
-			content=content,
-			hierarchy=hierarchy,
-			section_type=section_type,
-			subsections=subsections,
-			effective_date=effective_date,
-			source_url=metadata.get("source_url"),
-			metadata={k: v for k, v in metadata.items() if v is not None},
-		)
-		return ParseResult(section=section, skipped=False)
+			section = TaxSection(
+				section_number=section_number,
+				title=title,
+				content=content,
+				hierarchy=hierarchy,
+				section_type=section_type,
+				subsections=subsections,
+				effective_date=effective_date,
+				source_url=metadata.get("source_url"),
+				metadata={k: v for k, v in metadata.items() if v is not None},
+			)
+			return ParseResult(
+				section=section,
+				skipped=False,
+				file_path=file_path,
+			)
+		except ValidationError as exc:
+			return ParseResult(
+				section=None,
+				skipped=True,
+				file_path=file_path,
+				error_message=f"validation_error: {exc}",
+			)
+		except Exception as exc:
+			return ParseResult(
+				section=None,
+				skipped=True,
+				file_path=file_path,
+				error_message=f"parse_error: {exc}",
+			)
 
 	@staticmethod
 	def _iter_html_files(root_dir: str) -> Iterable[str]:
@@ -266,24 +383,10 @@ class TaxParser:
 			return datetime.strptime(value, "%Y%m%d").replace(tzinfo=timezone.utc)
 		return None
 
-	@staticmethod
-	def _trace_missing_statute(
-		file_path: str, metadata: Dict[str, Optional[str]], itempath: str
-	) -> None:
-		try:
-			from opentelemetry import trace
 
-			tracer = trace.get_tracer(__name__)
-			with tracer.start_as_current_span("missing_statute") as span:
-				span.set_attribute("file_path", file_path)
-				span.set_attribute("itempath", itempath)
-				for key, value in metadata.items():
-					if value is not None:
-						span.set_attribute(key, value)
-		except Exception:
-			LOGGER.warning(
-				"Missing statute field in %s (itempath=%s, metadata=%s)",
-				file_path,
-				itempath,
-				metadata,
-			)
+if __name__ == "__main__":
+	setup_tracer("tax-code-parser")
+	parser = TaxParser(root_dir="data/USCODE-2023-title26/raw/html")
+	parsed_sections = parser.parse_directory()
+	parser.upload_to_qdrant(parsed_sections)
+
