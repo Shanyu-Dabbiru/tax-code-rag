@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 
 from pydantic import BaseModel
 from qdrant_client import QdrantClient, models
+from sentence_transformers import CrossEncoder
 
 from src.processing.embedder import TaxEmbedder
 
@@ -22,6 +23,8 @@ class HybridRetriever:
         self.collection_name = collection_name
         self.qdrant = QdrantClient(url=self.qdrant_url)
         self.embedder = TaxEmbedder()
+        logger.info("Loading CrossEncoder reranker...")
+        self.reranker = CrossEncoder('BAAI/bge-reranker-base')
         
     def search(self, query: str, top_k: int = 5) -> List[ChunkResponse]:
         """Perform a hybrid search using dense and sparse vectors via Qdrant Prefetch."""
@@ -68,7 +71,17 @@ class HybridRetriever:
                 )
             )
             
-        # Usually we would just return top_k, but the plan step 2 says:
-        # 'Return the top 20 pre-reranked chunks.'
-        # so we just return all 20 for now. Task 3 will handle the top_k cut.
-        return response_chunks
+        # Reranking with CrossEncoder
+        if not response_chunks:
+            return []
+            
+        logger.info(f"Reranking {len(response_chunks)} candidates...")
+        pairs = [[query, chunk.text] for chunk in response_chunks]
+        scores = self.reranker.predict(pairs)
+        
+        # Update scores and sort
+        for chunk, score in zip(response_chunks, scores):
+            chunk.score = float(score)
+            
+        response_chunks.sort(key=lambda x: x.score, reverse=True)
+        return response_chunks[:top_k]
