@@ -8,5 +8,6 @@
   - Test constraints (`tests/test_tax_data.py`, `tests/smoke_test_ingestion.py`) validate the models and ingestion.
 - **Latest Test**: We ran a smoke test on a 10-file sample (`data/test_samples/`). The parser successfully extracted statutes, skipped `-front.htm` files without crashing, and fired OpenTelemetry batch traces to Phoenix.
 - **Phase 3 (Embedding) Progress**:
-  - We have drafted the `TaxEmbedder` class in `src/processing/embedder.py` using `sentence-transformers` and `BAAI/bge-small-en-v1.5`.
-- **Next Immediate Action**: Write an end-to-end embedding and upsert script to inject real semantic vectors into Qdrant, replacing placeholder vectors.
+  - We have a `TaxEmbedder` class in `src/processing/embedder.py` using `BAAI/bge-small-en-v1.5`.
+  - A detached `chunker.py` and `run_embedder.py` script now successfully parse JSON lines and upsert enriched, chunked text to Qdrant. Phase 3 is formally completed.
+- **Next Immediate Action**: Brainstorm and plan **Phase 4** (FastAPI backend with Hybrid Search and Cross-Encoder Reranking).

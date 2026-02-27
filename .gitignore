@@ -219,3 +219,6 @@ data/*.json
 
 # Next Steps file
 changelog.md
+
+# Local Databases
+infra/qdrant_storage/

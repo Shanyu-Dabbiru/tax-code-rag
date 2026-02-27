@@ -4,7 +4,7 @@ import logging
 import sys
 import uuid
 
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import PointStruct, VectorParams, Distance
 
 from src.processing.chunker import chunk_text
@@ -26,10 +26,15 @@ def init_collection(qdrant: QdrantClient, collection_name: str, vector_size: int
         collections = qdrant.get_collections().collections
         exists = any(c.name == collection_name for c in collections)
         if not exists:
-            logger.info(f"Creating collection '{collection_name}' with size {vector_size}")
+            logger.info(f"Creating collection '{collection_name}' with size {vector_size} (dense + sparse)")
             qdrant.create_collection(
                 collection_name=collection_name,
-                vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+                vectors_config={
+                    "dense": models.VectorParams(size=vector_size, distance=models.Distance.COSINE)
+                },
+                sparse_vectors_config={
+                    "sparse": models.SparseVectorParams()
+                }
             )
         else:
             logger.info(f"Collection '{collection_name}' already exists.")
@@ -93,15 +98,22 @@ def main():
         batch = points_data[i:i + args.batch_size]
         texts = [b[2] for b in batch]
         
-        logger.info(f"Embedding batch {i} to {min(i + args.batch_size, len(points_data))}...")
-        embeddings = embedder.embed_batch(texts)
+        logger.info(f"Embedding dense and sparse batch {i} to {min(i + args.batch_size, len(points_data))}...")
+        dense_embeddings = embedder.embed_batch(texts)
+        sparse_embeddings = embedder.embed_sparse_batch(texts)
         
         qdrant_points = []
         for j, (chunk_id_str, payload, text) in enumerate(batch):
             qdrant_points.append(
                 PointStruct(
                     id=chunk_id_str,
-                    vector=embeddings[j],
+                    vector={
+                        "dense": dense_embeddings[j],
+                        "sparse": models.SparseVector(
+                            indices=sparse_embeddings[j]["indices"],
+                            values=sparse_embeddings[j]["values"]
+                        )
+                    },
                     payload=payload
                 )
             )
