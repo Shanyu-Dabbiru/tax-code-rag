@@ -59,7 +59,13 @@ def chunk_text(text: str, max_chars: int = 1500) -> List[str]:
                 else:
                     # the piece itself is too big, need to recursive split it
                     current = ""
-                    _split_and_add(piece)
+                    clean_piece = piece[:-len(delimeter)] if (delimeter and piece.endswith(delimeter)) else piece
+                    # Fallback to hard chop if we somehow didn't reduce
+                    if clean_piece == text_to_split:
+                        hard_parts = [clean_piece[i:i+max_chars] for i in range(0, len(clean_piece), max_chars)]
+                        for hp in hard_parts: add_chunk(hp)
+                    else:
+                        _split_and_add(clean_piece)
         if current:
             chunks.append(current)
 
