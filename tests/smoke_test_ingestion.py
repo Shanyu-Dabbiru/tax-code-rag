@@ -14,7 +14,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.ingestion.otel_config import setup_tracer
 from src.ingestion.parser import TaxParser
 
 TEST_DIR = Path("data/test_samples")
@@ -29,12 +28,7 @@ def _install_inmemory_exporter() -> InMemorySpanExporter:
 	return exporter
 
 
-def _has_batch_uploaded_event(exporter: InMemorySpanExporter) -> bool:
-	for span in exporter.get_finished_spans():
-		for event in span.events:
-			if event.name == "batch_uploaded":
-				return True
-	return False
+
 
 
 def run_smoke_test() -> None:
@@ -42,7 +36,9 @@ def run_smoke_test() -> None:
 		print("Test samples not found. Run scripts/create_test_subset.py first.")
 		sys.exit(1)
 
-	setup_tracer("tax-code-smoke-test")
+	# Setup an in-memory tracer provider instead of OTLP exporter to avoid hanging
+	provider = TracerProvider()
+	trace.set_tracer_provider(provider)
 	exporter = _install_inmemory_exporter()
 
 	parser = TaxParser(root_dir=str(TEST_DIR))
@@ -59,13 +55,17 @@ def run_smoke_test() -> None:
 	print(f"Title: {first.title}")
 	print(f"Content Preview: {preview}")
 
-	parser.upload_to_qdrant(sections)
+	output_path = TEST_DIR / "taxes.jsonl"
+	if output_path.exists():
+		output_path.unlink()
 
-	if not _has_batch_uploaded_event(exporter):
-		print("Warning: No 'batch_uploaded' event found in trace.")
-		print("(Mock check) Assuming Qdrant upload succeeded.")
+	parser.save_to_jsonl(sections, str(output_path))
+	
+	if output_path.exists() and output_path.stat().st_size > 0:
+		print("Verified taxes.jsonl was successfully created.")
 	else:
-		print("Verified Qdrant upload event in trace.")
+		print("Error: taxes.jsonl missing or empty.")
+		sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -19,12 +19,9 @@ from typing import Dict, Iterable, List, Optional
 from lxml import html
 from opentelemetry import trace
 from pydantic import ValidationError
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, PointStruct, VectorParams
 
 from src.models.tax_data import SectionType, TaxSection
 from src.ingestion.otel_config import setup_tracer
-from src.processing.embedder import TaxEmbedder
 
 
 LOGGER = logging.getLogger(__name__)
@@ -36,9 +33,6 @@ DOCUMENT_ID_RE = re.compile(
 )
 ITEM_PATH_RE = re.compile(r"<!--\s*itempath:([^\r\n]*?)\s*-->")
 FIELD_START_RE = re.compile(r"<!--\s*field-start:([a-z0-9\-]+)\s*-->")
-
-COLLECTION_NAME = "tax_code_raw"
-BATCH_SIZE = 100
 
 
 @dataclass(frozen=True)
@@ -64,11 +58,9 @@ class TaxParser:
 		self,
 		root_dir: str,
 		max_workers: Optional[int] = None,
-		embedder: Optional[TaxEmbedder] = None,
 	) -> None:
 		self.root_dir = root_dir
 		self.max_workers = max_workers
-		self.embedder = embedder or TaxEmbedder()
 
 	def parse_directory(self) -> List[TaxSection]:
 		"""Parse all HTML files in the root directory using process parallelism."""
@@ -100,95 +92,12 @@ class TaxParser:
 			span.set_attribute("parsed_count", len(sections))
 		return sections
 
-	def upload_to_qdrant(self, sections: List[TaxSection]) -> None:
-		"""Upload validated TaxSection objects to Qdrant with embeddings in batches."""
-		client = self._get_qdrant_client()
-		vector_size = self.embedder.get_embedding_dim()
-		self._ensure_collection(client, vector_size)
-		tracer = trace.get_tracer(__name__)
-		with tracer.start_as_current_span("qdrant_upload") as span:
-			span.set_attribute("collection", COLLECTION_NAME)
-			span.set_attribute("batch_size", BATCH_SIZE)
-			span.set_attribute("total_sections", len(sections))
-			span.set_attribute("vector_size", vector_size)
-			# Embed all section content in batch for efficiency
-			content_texts = [section.content for section in sections]
-			embeddings = self.embedder.embed_batch(content_texts)
-			for start in range(0, len(sections), BATCH_SIZE):
-				batch = sections[start : start + BATCH_SIZE]
-				batch_embeddings = embeddings[start : start + BATCH_SIZE]
-				points = [
-					PointStruct(
-						id=str(section.id),
-						vector=vector,
-						payload=self._build_payload(section, vector_size),
-					)
-					for section, vector in zip(batch, batch_embeddings)
-				]
-				try:
-					client.upsert(collection_name=COLLECTION_NAME, points=points)
-					span.add_event(
-						"batch_uploaded",
-						{
-							"batch_start": start,
-							"batch_size": len(batch),
-						},
-					)
-				except Exception as exc:
-					span.add_event(
-						"upload_error",
-						{
-							"batch_start": start,
-							"batch_size": len(batch),
-							"error": str(exc),
-						},
-					)
-
-	@staticmethod
-	def _get_qdrant_client() -> QdrantClient:
-		return QdrantClient(host="localhost", port=6333)
-
-	@staticmethod
-	def _ensure_collection(client: QdrantClient, vector_size: int) -> None:
-		try:
-			collection = client.get_collection(COLLECTION_NAME)
-			# Check if vector size matches embedder dimension
-			if collection.config.params.vectors.size != vector_size:
-				LOGGER.info(
-					"Vector size mismatch: collection=%d, embedder=%d. Recreating collection.",
-					collection.config.params.vectors.size,
-					vector_size,
-				)
-				client.delete_collection(COLLECTION_NAME)
-				client.create_collection(
-					collection_name=COLLECTION_NAME,
-					vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
-				)
-			return
-		except Exception:
-			client.create_collection(
-				collection_name=COLLECTION_NAME,
-				vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
-			)
-
-	@staticmethod
-	def _build_payload(section: TaxSection, vector_size: int) -> Dict[str, object]:
-		return {
-			"section_number": section.section_number,
-			"title": section.title,
-			"content": section.content,
-			"hierarchy": section.hierarchy,
-			"section_type": section.section_type.value,
-			"subsections": section.subsections,
-			"effective_date": section.effective_date.isoformat()
-			if section.effective_date
-			else None,
-			"source_url": section.source_url,
-			"metadata": section.metadata,
-			"created_at": section.created_at.isoformat(),
-			"embedding_model": "BAAI/bge-small-en-v1.5",
-			"embedding_dim": vector_size,
-		}
+	def save_to_jsonl(self, sections: List[TaxSection], output_path: str) -> None:
+		"""Save a list of TaxSections to a JSON Lines file."""
+		with open(output_path, "w", encoding="utf-8") as f:
+			for section in sections:
+				# Use model_dump_json to serialize uuid/datetime fields properly
+				f.write(section.model_dump_json() + "\n")
 
 	@staticmethod
 	def parse_file(file_path: str) -> ParseResult:
@@ -412,8 +321,12 @@ class TaxParser:
 
 if __name__ == "__main__":
 	setup_tracer("tax-code-parser")
-	embedder = TaxEmbedder()
-	parser = TaxParser(root_dir="data/USCODE-2023-title26/raw/html", embedder=embedder)
+	parser = TaxParser(root_dir="data/USCODE-2023-title26/raw/html")
 	parsed_sections = parser.parse_directory()
-	parser.upload_to_qdrant(parsed_sections)
-
+	
+	output_dir = "data/processed"
+	os.makedirs(output_dir, exist_ok=True)
+	out_path = os.path.join(output_dir, "taxes.jsonl")
+	
+	parser.save_to_jsonl(parsed_sections, out_path)
+	print(f"Saved {len(parsed_sections)} sections to {out_path}")
