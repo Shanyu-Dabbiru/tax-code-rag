@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-origin-bg: #F9F9F7;
+  --color-origin-text: #01000A;
+  --color-origin-primary: #FAA2A1;
+  --color-origin-accent: #FA8072;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+
+body {
+  background-color: var(--color-origin-bg);
+  color: var(--color-origin-text);
+  font-family: var(--font-sans);
+}
