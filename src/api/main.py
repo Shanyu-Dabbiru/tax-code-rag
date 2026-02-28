@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.retriever import HybridRetriever, ChunkResponse
+from src.api.generator import TaxGenerator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,15 +24,27 @@ class SearchRequest(BaseModel):
 class SearchResponse(BaseModel):
     results: List[ChunkResponse]
 
+class GenerateRequest(BaseModel):
+    query: str = Field(..., description="The query string")
+    contexts: List[str] = Field(..., description="A list of context strings")
+
+class GenerateResponse(BaseModel):
+    answer: str
+
 # Global retriever instance
 retriever: HybridRetriever = None
+generator: TaxGenerator = None
 
 @app.on_event("startup")
 def startup_event():
-    global retriever
+    global retriever, generator
     logger.info("Initializing HybridRetriever...")
     retriever = HybridRetriever()
     logger.info("HybridRetriever initialized.")
+    
+    logger.info("Initializing TaxGenerator...")
+    generator = TaxGenerator()
+    logger.info("TaxGenerator initialized.")
 
 @app.post("/search", response_model=SearchResponse)
 def search_endpoint(request: SearchRequest):
@@ -45,4 +58,18 @@ def search_endpoint(request: SearchRequest):
         return SearchResponse(results=chunks)
     except Exception as e:
         logger.error(f"Error during search: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate", response_model=GenerateResponse)
+def generate_endpoint(request: GenerateRequest):
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
+    if not request.contexts:
+        raise HTTPException(status_code=400, detail="Contexts cannot be empty.")
+        
+    try:
+        answer = generator.generate_answer(query=request.query, contexts=request.contexts)
+        return GenerateResponse(answer=answer)
+    except Exception as e:
+        logger.error(f"Error during generation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
