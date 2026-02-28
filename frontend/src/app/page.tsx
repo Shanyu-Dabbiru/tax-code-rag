@@ -24,7 +24,7 @@ export default function Home() {
       setAnswer(null);
 
       // Step 1: Retrieval
-      const searchRes = await fetch("http://localhost:8000/search", {
+      const searchRes = await fetch("http://127.0.0.1:8000/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: userQuery, top_k: 5 }),
@@ -44,7 +44,7 @@ export default function Home() {
       setStatus('generating');
 
       // Step 2: Generation
-      const generateRes = await fetch("http://localhost:8000/generate", {
+      const generateRes = await fetch("http://127.0.0.1:8000/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
