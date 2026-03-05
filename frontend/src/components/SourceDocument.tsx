@@ -9,7 +9,7 @@ export interface SourceDocumentData {
 
 export default function SourceDocument({ doc }: { doc: SourceDocumentData }) {
     return (
-        <div className="flex flex-col gap-2 p-5 mb-4 rounded-lg bg-origin-bg border border-gray-100 shadow-sm">
+        <div className="flex flex-col gap-2 p-5 mb-4 rounded-lg bg-origin-bg border border-origin-border shadow-sm">
             <h3 className="font-semibold text-origin-accent text-lg">
                 {doc.section_number}
             </h3>

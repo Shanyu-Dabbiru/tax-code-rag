@@ -31,11 +31,11 @@ export default function ChatPane({ status, messages, onSendMessage }: ChatPanePr
                     {messages.map((msg) => (
                         <div key={msg.id} className={`w-full flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                             {msg.role === 'user' ? (
-                                <div className="bg-origin-text text-white px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-sm min-w-0 break-words whitespace-pre-wrap">
+                                <div className="bg-origin-text text-origin-bg px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-sm min-w-0 break-words whitespace-pre-wrap">
                                     <p className="text-lg">{msg.content}</p>
                                 </div>
                             ) : (
-                                <div className="bg-white p-6 rounded-2xl rounded-tl-sm w-full shadow-sm border border-gray-100 text-origin-text leading-relaxed min-w-0 break-words whitespace-pre-wrap mt-2">
+                                <div className="bg-origin-panel p-6 rounded-2xl rounded-tl-sm w-full shadow-sm border border-origin-border text-origin-text leading-relaxed min-w-0 break-words whitespace-pre-wrap mt-2">
                                     <p className="text-lg">{msg.content}</p>
                                 </div>
                             )}

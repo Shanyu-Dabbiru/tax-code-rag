@@ -39,7 +39,7 @@ export default function Home() {
       if (!searchRes.ok) throw new Error("Search failed");
       const searchData = await searchRes.json();
 
-      const retrievedSources = searchData.results.map((r: any) => ({
+      const retrievedSources = searchData.results.map((r: { chunk_id?: string; section_number: string; title?: string; text: string }) => ({
         id: r.chunk_id || Math.random().toString(),
         section_number: r.section_number,
         title: r.title,

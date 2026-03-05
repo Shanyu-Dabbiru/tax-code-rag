@@ -1,10 +1,31 @@
 @import "tailwindcss";
 
+@layer base {
+  :root {
+    --bg: #F9F9F7;
+    --panel: #ffffff;
+    --text: #01000A;
+    --border: #e5e7eb; /* Equivalent to gray-200 */
+    --primary: #FAA2A1;
+    --accent: #FA8072;
+  }
+  .dark {
+    --bg: #09090b;
+    --panel: #18181b;
+    --text: #fafafa;
+    --border: #27272a;
+    --primary: #FAA2A1;
+    --accent: #FA8072;
+  }
+}
+
 @theme inline {
-  --color-origin-bg: #F9F9F7;
-  --color-origin-text: #01000A;
-  --color-origin-primary: #FAA2A1;
-  --color-origin-accent: #FA8072;
+  --color-origin-bg: var(--bg);
+  --color-origin-panel: var(--panel);
+  --color-origin-text: var(--text);
+  --color-origin-border: var(--border);
+  --color-origin-primary: var(--primary);
+  --color-origin-accent: var(--accent);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
 }
 

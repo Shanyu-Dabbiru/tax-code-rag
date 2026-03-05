@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import ChatPane from '../ChatPane';
-import { Message, SearchStatus } from '../../app/page';
+import { Message } from '../../app/page';
 
 describe('ChatPane Component (Worst-Case UI Resilience)', () => {
 
