@@ -8,20 +8,26 @@ import { SourceDocumentData } from "../components/SourceDocument";
 
 export type SearchStatus = 'idle' | 'searching' | 'generating' | 'done' | 'error';
 
+export type Message = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sources?: SourceDocumentData[];
+};
+
 export default function Home() {
-  const [query, setQuery] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
   const [sources, setSources] = useState<SourceDocumentData[]>([]);
-  const [answer, setAnswer] = useState<string | null>(null);
   const [status, setStatus] = useState<SearchStatus>('idle');
 
   const handleSendMessage = async (userQuery: string) => {
     if (!userQuery.trim()) return;
 
     try {
-      setQuery(userQuery);
+      const newUserMsg: Message = { id: Math.random().toString(), role: 'user', content: userQuery };
+      setMessages((prev) => [...prev, newUserMsg]);
       setStatus('searching');
       setSources([]);
-      setAnswer(null);
 
       // Step 1: Retrieval
       const searchRes = await fetch("http://127.0.0.1:8000/search", {
@@ -56,7 +62,8 @@ export default function Home() {
       if (!generateRes.ok) throw new Error("Generation failed");
       const generateData = await generateRes.json();
 
-      setAnswer(generateData.answer);
+      const newAsstMsg: Message = { id: Math.random().toString(), role: 'assistant', content: generateData.answer, sources: retrievedSources };
+      setMessages((prev) => [...prev, newAsstMsg]);
       setStatus('done');
 
     } catch (error) {
@@ -68,7 +75,7 @@ export default function Home() {
   return (
     <main className="flex h-screen w-full overflow-hidden bg-origin-bg font-sans">
       <SidebarLeft />
-      <ChatPane status={status} answer={answer} onSendMessage={handleSendMessage} userQuery={query} />
+      <ChatPane status={status} messages={messages} onSendMessage={handleSendMessage} />
       <SourcesPane sources={sources} />
     </main>
   );

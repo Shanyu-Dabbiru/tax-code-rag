@@ -1,32 +1,47 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import HeroGreeting from './HeroGreeting';
 import ChatInputBox from './ChatInputBox';
-import { SearchStatus } from '../app/page';
+import { SearchStatus, Message } from '../app/page';
 
 interface ChatPaneProps {
     status: SearchStatus;
-    answer: string | null;
-    userQuery: string;
+    messages: Message[];
     onSendMessage: (query: string) => void;
 }
 
-export default function ChatPane({ status, answer, userQuery, onSendMessage }: ChatPaneProps) {
+export default function ChatPane({ status, messages, onSendMessage }: ChatPaneProps) {
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [messages, status]);
+
     return (
         <div className="flex-1 h-full flex flex-col relative bg-origin-bg items-center pt-16 p-8 overflow-y-auto pb-32">
-            {status === 'idle' && !answer && (
+            {messages.length === 0 && (
                 <div className="flex-1 flex items-center justify-center -mt-32">
                     <HeroGreeting />
                 </div>
             )}
 
-            {status !== 'idle' && (
+            {messages.length > 0 && (
                 <div className="max-w-3xl w-full flex flex-col gap-6">
-                    {/* User Query Bubble */}
-                    <div className="self-end bg-origin-text text-white px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-sm">
-                        <p className="text-lg">{userQuery}</p>
-                    </div>
+                    {messages.map((msg) => (
+                        <div key={msg.id} className={`w-full flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                            {msg.role === 'user' ? (
+                                <div className="bg-origin-text text-white px-6 py-4 rounded-2xl rounded-tr-sm max-w-[80%] shadow-sm min-w-0 break-words whitespace-pre-wrap">
+                                    <p className="text-lg">{msg.content}</p>
+                                </div>
+                            ) : (
+                                <div className="bg-white p-6 rounded-2xl rounded-tl-sm w-full shadow-sm border border-gray-100 text-origin-text leading-relaxed min-w-0 break-words whitespace-pre-wrap mt-2">
+                                    <p className="text-lg">{msg.content}</p>
+                                </div>
+                            )}
+                        </div>
+                    ))}
 
-                    {/* Loading State or Answer Bubble */}
                     <div className="self-start w-full">
                         {(status === 'searching' || status === 'generating') && (
                             <div className="flex items-center gap-3 text-origin-text/70 mt-2">
@@ -37,16 +52,11 @@ export default function ChatPane({ status, answer, userQuery, onSendMessage }: C
 
                         {status === 'error' && (
                             <div className="text-red-500 mt-2">
-                                An error occurred while processing your query.
-                            </div>
-                        )}
-
-                        {answer && (
-                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 text-origin-text leading-relaxed whitespace-pre-wrap mt-2">
-                                {answer}
+                                An error occurred while processing your query. Please try again.
                             </div>
                         )}
                     </div>
+                    <div ref={messagesEndRef} />
                 </div>
             )}
 
