@@ -19,6 +19,7 @@ export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [sources, setSources] = useState<SourceDocumentData[]>([]);
   const [status, setStatus] = useState<SearchStatus>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleSendMessage = async (userQuery: string) => {
     if (!userQuery.trim()) return;
@@ -28,6 +29,7 @@ export default function Home() {
       setMessages((prev) => [...prev, newUserMsg]);
       setStatus('searching');
       setSources([]);
+      setErrorMessage(null);
 
       // Step 1: Retrieval
       const searchRes = await fetch("http://127.0.0.1:8000/search", {
@@ -36,10 +38,13 @@ export default function Home() {
         body: JSON.stringify({ query: userQuery, top_k: 5 }),
       });
 
-      if (!searchRes.ok) throw new Error("Search failed");
+      if (!searchRes.ok) {
+        const errorData = await searchRes.json().catch(() => null);
+        throw new Error(errorData?.detail || "Search failed");
+      }
       const searchData = await searchRes.json();
 
-      const retrievedSources = searchData.results.map((r: any) => ({
+      const retrievedSources = searchData.results.map((r: { chunk_id?: string; section_number: string; title: string; text: string }) => ({
         id: r.chunk_id || Math.random().toString(),
         section_number: r.section_number,
         title: r.title,
@@ -59,15 +64,20 @@ export default function Home() {
         }),
       });
 
-      if (!generateRes.ok) throw new Error("Generation failed");
+      if (!generateRes.ok) {
+        const errorData = await generateRes.json().catch(() => null);
+        throw new Error(errorData?.detail || "Generation failed");
+      }
       const generateData = await generateRes.json();
 
       const newAsstMsg: Message = { id: Math.random().toString(), role: 'assistant', content: generateData.answer, sources: retrievedSources };
       setMessages((prev) => [...prev, newAsstMsg]);
       setStatus('done');
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(error);
+      const msg = error instanceof Error ? error.message : "An unknown error occurred.";
+      setErrorMessage(msg);
       setStatus('error');
     }
   };
@@ -75,7 +85,7 @@ export default function Home() {
   return (
     <main className="flex h-screen w-full overflow-hidden bg-origin-bg font-sans">
       <SidebarLeft />
-      <ChatPane status={status} messages={messages} onSendMessage={handleSendMessage} />
+      <ChatPane status={status} messages={messages} onSendMessage={handleSendMessage} errorMessage={errorMessage} />
       <SourcesPane sources={sources} />
     </main>
   );

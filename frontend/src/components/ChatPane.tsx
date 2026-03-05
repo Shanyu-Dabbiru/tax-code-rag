@@ -6,10 +6,11 @@ import { SearchStatus, Message } from '../app/page';
 interface ChatPaneProps {
     status: SearchStatus;
     messages: Message[];
+    errorMessage?: string | null;
     onSendMessage: (query: string) => void;
 }
 
-export default function ChatPane({ status, messages, onSendMessage }: ChatPaneProps) {
+export default function ChatPane({ status, messages, errorMessage, onSendMessage }: ChatPaneProps) {
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -51,8 +52,8 @@ export default function ChatPane({ status, messages, onSendMessage }: ChatPanePr
                         )}
 
                         {status === 'error' && (
-                            <div className="text-red-500 mt-2">
-                                An error occurred while processing your query. Please try again.
+                            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mt-2 text-sm shadow-sm whitespace-pre-wrap font-mono">
+                                {errorMessage || "An error occurred while processing your query. Please try again."}
                             </div>
                         )}
                     </div>
