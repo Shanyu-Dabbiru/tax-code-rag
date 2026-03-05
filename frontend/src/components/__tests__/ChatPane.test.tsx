@@ -58,4 +58,15 @@ describe('ChatPane Component (Worst-Case UI Resilience)', () => {
         rerender(<ChatPane status="generating" messages={messages} onSendMessage={mockSendMessage} />);
         expect(screen.getByText('Generating answer...')).toBeInTheDocument();
     });
+
+    it('TC-04: Renders error messages standalone when status is error', () => {
+        const messages: Message[] = [{ id: '1', role: 'user', content: 'Help' }];
+
+        render(<ChatPane status="error" messages={messages} onSendMessage={mockSendMessage} errorMessage="Extremely long and detailed error message containing stack traces and internal server information..." />);
+
+        expect(screen.getByText(/Extremely long and detailed error/)).toBeInTheDocument();
+        // Spinner should not be present
+        expect(screen.queryByText('Searching tax code...')).not.toBeInTheDocument();
+        expect(screen.queryByText('Generating answer...')).not.toBeInTheDocument();
+    });
 });

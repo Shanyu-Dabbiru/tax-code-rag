@@ -113,4 +113,46 @@ describe('Page - Worst Case Orchestration Scenarios', () => {
             expect(screen.getByText('Second try succeeded')).toBeInTheDocument();
         });
     });
+
+    it('handles non-JSON garbage response from /search endpoint (HTML 502 Bad Gateway proxy error)', async () => {
+        // Simulating Nginx or Load Balancer returning HTML on a 502 Bad Gateway
+        mockFetch.mockResolvedValueOnce({
+            ok: false,
+            json: async () => { throw new Error("Unexpected token < in JSON at position 0"); }
+        });
+
+        render(<Page />);
+        fireEvent.change(screen.getByPlaceholderText('Ask a tax question...'), { target: { value: 'What if API returns an HTML page?' } });
+        fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('Search failed')).toBeInTheDocument(); // The default error in the code fallback
+        });
+    });
+
+    it('handles an empty results array from /search gracefully without crashing /generate', async () => {
+        // It's entirely possible a query yields 0 results from Qdrant
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ results: [] }),
+        });
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({ answer: 'I could not find any tax code matching that, but taxes are mandatory.' }),
+        });
+
+        render(<Page />);
+        fireEvent.change(screen.getByPlaceholderText('Ask a tax question...'), { target: { value: 'A completely unrelated query' } });
+        fireEvent.click(screen.getByRole('button', { name: /send message/i }));
+
+        await waitFor(() => {
+            expect(screen.getByText('I could not find any tax code matching that, but taxes are mandatory.')).toBeInTheDocument();
+        });
+
+        // Verifying that Generate was called with an empty contexts array
+        const generateCall = mockFetch.mock.calls[1][1];
+        const bodyObj = JSON.parse(generateCall.body);
+        expect(bodyObj.contexts).toEqual([]);
+    });
 });

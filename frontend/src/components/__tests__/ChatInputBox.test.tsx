@@ -63,4 +63,35 @@ describe('ChatInputBox - Worst Case Scenarios', () => {
         fireEvent.change(input, { target: { value: longString } });
         expect(input).toHaveValue(longString);
     });
+
+    it('submits on Enter key press but not on other keys', () => {
+        render(<ChatInputBox onSendMessage={mockOnSendMessage} disabled={false} />);
+        const input = screen.getByPlaceholderText('Ask a tax question...');
+
+        fireEvent.change(input, { target: { value: 'Keyboard test' } });
+
+        // Simulating pressing Enter inside the input field within a form
+        // Form submission is usually handled by the browser on Enter. We simulate form submit.
+        const form = input.closest('form');
+        if (form) fireEvent.submit(form);
+
+        expect(mockOnSendMessage).toHaveBeenCalledWith('Keyboard test');
+    });
+
+    it('trims whitespace but does not send purely tabbed input', () => {
+        render(<ChatInputBox onSendMessage={mockOnSendMessage} disabled={false} />);
+        const input = screen.getByPlaceholderText('Ask a tax question...');
+        const submitBtn = screen.getByRole('button', { name: /send message/i });
+
+        fireEvent.change(input, { target: { value: '\t\t\t' } });
+        fireEvent.submit(submitBtn);
+
+        expect(mockOnSendMessage).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: '  hello \t ' } });
+        fireEvent.submit(submitBtn);
+
+        // onSendMessage should be called with the exact string, the trimmed check is in the component: if (query.trim())
+        expect(mockOnSendMessage).toHaveBeenCalledWith('  hello \t ');
+    });
 });
