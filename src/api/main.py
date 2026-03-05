@@ -52,6 +52,39 @@ generator: TaxGenerator = None
 @app.on_event("startup")
 def startup_event():
     global retriever, generator
+    
+    # Configure OpenTelemetry
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+    import os
+    
+    logger.info("Configuring OpenTelemetry...")
+    resource = Resource.create({"service.name": "tax-rag-api"})
+    provider = TracerProvider(resource=resource)
+    
+    endpoint = os.environ.get("PHOENIX_COLLECTOR_ENDPOINT", "http://localhost:4317")
+    headers_str = os.environ.get("PHOENIX_CLIENT_HEADERS", "")
+    headers = dict([h.split("=", 1) for h in headers_str.split(",") if "=" in h]) if headers_str else {}
+    
+    exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    
+    try:
+        from openinference.instrumentation.openai import OpenAIInstrumentor
+        OpenAIInstrumentor().instrument()
+    except ImportError:
+        logger.warning("openinference-instrumentation-openai not installed.")
+        
+    try:
+        from openinference.instrumentation.fastapi import FastAPIInstrumentor
+        FastAPIInstrumentor().instrument(app=app)
+    except ImportError:
+        pass
+        
     logger.info("Initializing HybridRetriever...")
     retriever = HybridRetriever()
     logger.info("HybridRetriever initialized.")
