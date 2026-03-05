@@ -222,3 +222,6 @@ changelog.md
 
 # Local Databases
 infra/qdrant_storage/
+
+# Worktrees
+.worktrees/
