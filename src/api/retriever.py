@@ -6,6 +6,10 @@ from qdrant_client import QdrantClient, models
 from sentence_transformers import CrossEncoder
 
 from src.processing.embedder import TaxEmbedder
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +22,10 @@ class ChunkResponse(BaseModel):
     score: float
 
 class HybridRetriever:
-    def __init__(self, qdrant_url: str = "http://localhost:6333", collection_name: str = "tax_code_chunks"):
-        self.qdrant_url = qdrant_url
+    def __init__(self, qdrant_url: str = None, collection_name: str = "tax_code_chunks"):
+        self.qdrant_url = qdrant_url or os.getenv("QDRANT_URL", "http://localhost:6333")
         self.collection_name = collection_name
-        self.qdrant = QdrantClient(url=self.qdrant_url)
+        self.qdrant = QdrantClient(url=self.qdrant_url, api_key=os.getenv("QDRANT_API_KEY"))
         self.embedder = TaxEmbedder()
         logger.info("Loading CrossEncoder reranker...")
         self.reranker = CrossEncoder('BAAI/bge-reranker-base')

@@ -8,7 +8,7 @@ from openai import OpenAI
 load_dotenv()
 
 def main():
-    qdrant = QdrantClient(url="http://localhost:6333")
+    qdrant = QdrantClient(url=os.getenv("QDRANT_URL", "http://localhost:6333"), api_key=os.getenv("QDRANT_API_KEY"))
     collection_name = "tax_code_chunks"
     
     print("Fetching chunks from Qdrant...")

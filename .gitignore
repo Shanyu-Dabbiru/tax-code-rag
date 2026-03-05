@@ -225,3 +225,5 @@ infra/qdrant_storage/
 
 # Worktrees
 .worktrees/
+.agent/
+qdrant_storage/

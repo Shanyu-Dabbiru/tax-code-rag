@@ -3,6 +3,10 @@ import json
 import logging
 import sys
 import uuid
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.models import PointStruct, VectorParams, Distance
@@ -16,7 +20,7 @@ logger = logging.getLogger(__name__)
 def parse_args():
     parser = argparse.ArgumentParser(description="Embed and upsert tax code chunks to Qdrant")
     parser.add_argument("--input", required=True, help="Path to input jsonl file")
-    parser.add_argument("--qdrant-url", default="http://localhost:6333", help="Qdrant URL")
+    parser.add_argument("--qdrant-url", default=os.getenv("QDRANT_URL", "http://localhost:6333"), help="Qdrant URL")
     parser.add_argument("--collection", default="tax_code_chunks", help="Collection name")
     parser.add_argument("--batch-size", default=64, type=int, help="Batch size for embedding and upsert")
     return parser.parse_args()
@@ -46,7 +50,7 @@ def main():
     args = parse_args()
     
     logger.info("Initializing Qdrant client and embedder...")
-    qdrant = QdrantClient(url=args.qdrant_url)
+    qdrant = QdrantClient(url=args.qdrant_url, api_key=os.getenv("QDRANT_API_KEY"))
     embedder = TaxEmbedder()
     vector_size = embedder.get_embedding_dim()
     
